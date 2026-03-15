@@ -359,7 +359,7 @@ class SessionStore:
                 changed = True
         return changed
 
-    def _ensure_chat_data(self, user_id: str, chat_id: str) -> dict:
+    async def _ensure_chat_data(self, user_id: str, chat_id: str) -> dict:
         user = self._user(user_id)
         chat_key = self._normalize_chat_key(user_id, chat_id)
         changed = False
@@ -386,7 +386,7 @@ class SessionStore:
             changed = True
 
         if changed:
-            asyncio.run(self._save_async())
+            await self._save_async()
 
         return chat_data
 
@@ -394,15 +394,15 @@ class SessionStore:
         """获取缓存的摘要"""
         return self._user(user_id).get("summaries", {}).get(session_id, "")
 
-    def batch_set_summaries(self, user_id: str, summaries: dict):
+    async def batch_set_summaries(self, user_id: str, summaries: dict):
         """批量缓存摘要并保存"""
         user = self._user(user_id)
         user.setdefault("summaries", {}).update(summaries)
-        asyncio.run(self._save_async())
+        await self._save_async()
 
-    def get_current(self, user_id: str, chat_id: str) -> Session:
+    async def get_current(self, user_id: str, chat_id: str) -> Session:
         """Get current session config for a specific chat"""
-        cur = self.get_current_raw(user_id, chat_id)
+        cur = await self.get_current_raw(user_id, chat_id)
         return Session(
             session_id=cur.get("session_id"),
             model=cur.get("model", DEFAULT_MODEL),
@@ -411,9 +411,9 @@ class SessionStore:
             workspace=cur.get("workspace", ""),
         )
 
-    def on_claude_response(self, user_id: str, chat_id: str, new_session_id: str, first_message: str):
+    async def on_claude_response(self, user_id: str, chat_id: str, new_session_id: str, first_message: str):
         """Claude 回复后用返回的 session_id 更新状态"""
-        chat_data = self._ensure_chat_data(user_id, chat_id)
+        chat_data = await self._ensure_chat_data(user_id, chat_id)
         cur = chat_data["current"]
         old_id = cur.get("session_id")
 
@@ -441,11 +441,11 @@ class SessionStore:
         cur["session_id"] = new_session_id
         if not cur.get("preview"):
             cur["preview"] = _clean_preview(first_message)[:40]
-        asyncio.run(self._save_async())
+        await self._save_async()
 
-    def new_session(self, user_id: str, chat_id: str) -> str:
+    async def new_session(self, user_id: str, chat_id: str) -> str:
         """Start a new session for a specific chat, return old session title"""
-        chat_data = self._ensure_chat_data(user_id, chat_id)
+        chat_data = await self._ensure_chat_data(user_id, chat_id)
         cur = chat_data["current"]
         old_title = ""
 
@@ -482,29 +482,29 @@ class SessionStore:
             "preview": "",
             "workspace": cur.get("workspace", ""),
         }
-        asyncio.run(self._save_async())
+        await self._save_async()
         return old_title
 
-    def set_model(self, user_id: str, chat_id: str, model: str):
+    async def set_model(self, user_id: str, chat_id: str, model: str):
         """Set model for a specific chat"""
-        chat_data = self._ensure_chat_data(user_id, chat_id)
+        chat_data = await self._ensure_chat_data(user_id, chat_id)
         chat_data["current"]["model"] = model
-        asyncio.run(self._save_async())
+        await self._save_async()
 
-    def set_cwd(self, user_id: str, chat_id: str, cwd: str, workspace_name: Optional[str] = None):
+    async def set_cwd(self, user_id: str, chat_id: str, cwd: str, workspace_name: Optional[str] = None):
         """Set working directory for a specific chat"""
-        chat_data = self._ensure_chat_data(user_id, chat_id)
+        chat_data = await self._ensure_chat_data(user_id, chat_id)
         chat_data["current"]["cwd"] = cwd
         chat_data["current"]["workspace"] = workspace_name or ""
-        asyncio.run(self._save_async())
+        await self._save_async()
 
-    def set_permission_mode(self, user_id: str, chat_id: str, mode: str):
+    async def set_permission_mode(self, user_id: str, chat_id: str, mode: str):
         """Set permission mode for a specific chat"""
-        chat_data = self._ensure_chat_data(user_id, chat_id)
+        chat_data = await self._ensure_chat_data(user_id, chat_id)
         chat_data["current"]["permission_mode"] = mode
-        asyncio.run(self._save_async())
+        await self._save_async()
 
-    def resume_session(self, user_id: str, chat_id: str, index_or_id: str) -> tuple[Optional[str], str]:
+    async def resume_session(self, user_id: str, chat_id: str, index_or_id: str) -> tuple[Optional[str], str]:
         """按序号（1-based）或 session_id 恢复 session，返回 (session_id, old_title)"""
         if user_id not in self._data:
             return None, ""
@@ -513,7 +513,7 @@ class SessionStore:
         if chat_key not in self._data[user_id]:
             return None, ""
 
-        chat_data = self._ensure_chat_data(user_id, chat_id)
+        chat_data = await self._ensure_chat_data(user_id, chat_id)
         history = chat_data.get("history", [])
 
         try:
@@ -560,10 +560,10 @@ class SessionStore:
         cur["session_id"] = session_id
         cur["preview"] = original_preview
         cur["started_at"] = original_started or datetime.now().isoformat()
-        asyncio.run(self._save_async())
+        await self._save_async()
         return session_id, old_title
 
-    def list_sessions(self, user_id: str, chat_id: str) -> list:
+    async def list_sessions(self, user_id: str, chat_id: str) -> list:
         """List all sessions for a specific chat"""
         if user_id not in self._data:
             return []
@@ -572,19 +572,19 @@ class SessionStore:
         if chat_key not in self._data[user_id]:
             return []
 
-        return list(reversed(self._ensure_chat_data(user_id, chat_id).get("history", [])))
+        return list(reversed((await self._ensure_chat_data(user_id, chat_id)).get("history", [])))
 
     def list_workspaces(self, user_id: str) -> dict[str, str]:
         """List saved workspaces for a user"""
         return dict(sorted(self._user(user_id).get("workspaces", {}).items()))
 
-    def save_workspace(self, user_id: str, name: str, cwd: str):
+    async def save_workspace(self, user_id: str, name: str, cwd: str):
         """Save or update a named workspace for a user"""
         user = self._user(user_id)
         user.setdefault("workspaces", {})[name] = cwd
-        asyncio.run(self._save_async())
+        await self._save_async()
 
-    def delete_workspace(self, user_id: str, name: str) -> bool:
+    async def delete_workspace(self, user_id: str, name: str) -> bool:
         """Delete a named workspace and clear active bindings that reference it"""
         user = self._user(user_id)
         workspaces = user.setdefault("workspaces", {})
@@ -597,20 +597,20 @@ class SessionStore:
                 continue
             if chat_data["current"].get("workspace") == name:
                 chat_data["current"]["workspace"] = ""
-        asyncio.run(self._save_async())
+        await self._save_async()
         return True
 
-    def bind_workspace(self, user_id: str, chat_id: str, name: str) -> Optional[str]:
+    async def bind_workspace(self, user_id: str, chat_id: str, name: str) -> Optional[str]:
         """Bind a saved workspace to the current chat"""
         path = self._user(user_id).get("workspaces", {}).get(name)
         if not path:
             return None
-        self.set_cwd(user_id, chat_id, path, workspace_name=name)
+        await self.set_cwd(user_id, chat_id, path, workspace_name=name)
         return path
 
-    def get_current_raw(self, user_id: str, chat_id: str = None) -> dict:
+    async def get_current_raw(self, user_id: str, chat_id: str = None) -> dict:
         """Get raw current session data for a specific chat"""
         if chat_id is None:
             chat_id = user_id
 
-        return self._ensure_chat_data(user_id, chat_id)["current"]
+        return (await self._ensure_chat_data(user_id, chat_id))["current"]

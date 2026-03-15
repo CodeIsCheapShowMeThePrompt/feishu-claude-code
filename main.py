@@ -154,7 +154,7 @@ async def _process_message(user_id: str, chat_id: str, is_group: bool, msg):
     parsed = parse_command(text)
     if parsed:
         cmd, args = parsed
-        reply = handle_command(cmd, args, user_id, chat_id, store)
+        reply = await handle_command(cmd, args, user_id, chat_id, store)
         if reply is not None:
             if cmd == "resume" and not args:
                 # /resume 命令特殊处理：发送文本消息
@@ -173,7 +173,7 @@ async def _process_message(user_id: str, chat_id: str, is_group: bool, msg):
         # reply is None → 不是 bot 命令，当作普通消息（含 /xxx）转发给 Claude
 
     # ── 普通消息 → 调用 Claude ──────────────────────────────
-    session = store.get_current(user_id, chat_id)
+    session = await store.get_current(user_id, chat_id)
     print(f"[Claude] session={session.session_id} model={session.model}", flush=True)
 
     # 1. 发送"思考中"占位卡片，拿到 message_id
@@ -242,7 +242,7 @@ async def _process_message(user_id: str, chat_id: str, is_group: bool, msg):
     # 4. 更新 session 状态
     if new_session_id:
         # Note: on_claude_response still uses old signature, need to update
-        store.on_claude_response(user_id, chat_id, new_session_id, text)
+        await store.on_claude_response(user_id, chat_id, new_session_id, text)
 
 
 
