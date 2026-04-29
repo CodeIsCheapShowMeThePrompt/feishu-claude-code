@@ -79,6 +79,10 @@ _active_runs = ActiveRunRegistry()
 _chat_locks: dict[str, asyncio.Lock] = {}
 _MAX_CHAT_LOCKS = 200  # 防止无界增长
 
+# 消息去重：飞书 WebSocket 偶尔会推送重复消息
+_processed_msg_ids: set[str] = set()
+_MAX_PROCESSED_IDS = 2000  # 防止内存无限增长
+
 
 # ── /stop 命令处理 ───────────────────────────────────────────
 
@@ -779,6 +783,16 @@ def on_message_receive(data: P2ImMessageReceiveV1) -> None:
     """飞书 SDK 同步回调，调度异步任务到 _bot_loop。"""
     global _last_event
     _last_event = time.time()
+
+    # 消息去重：飞书 WebSocket 偶尔推送重复消息
+    msg_id = data.event.message.message_id
+    if msg_id in _processed_msg_ids:
+        print(f"[去重] 跳过重复消息 msg_id={msg_id}", flush=True)
+        return
+    _processed_msg_ids.add(msg_id)
+    if len(_processed_msg_ids) > _MAX_PROCESSED_IDS:
+        _processed_msg_ids.clear()
+
     asyncio.run_coroutine_threadsafe(handle_message_async(data), _bot_loop)
 
 
